@@ -1,0 +1,206 @@
+// Include the AccelStepper library:
+#include <AccelStepper.h>
+#include <SolarCalculator.h>
+#include <Wire.h>
+#include "Arduino.h"
+#include "uRTCLib.h"
+#include <math.h>
+
+//Define System Geometry
+const double pos_collector1 = 0;
+const double pos_collector2 = 1.75;
+const double pos_reflector1 = 0.245;
+const double pos_reflector2 = 0.497;
+const double pos_reflector3 = 0.749;
+const double pos_reflector4 = 1.001;
+const double pos_reflector5 = 1.253;
+const double pos_reflector6 = 1.505;
+const double collector_height = 1.45;
+const double angle_1to1 = 180 - (atan(collector_height / (pos_reflector1 - pos_collector1))) * (180 / PI);
+const double angle_1to2 = (atan(collector_height / (pos_collector2 - pos_reflector1))) * (180 / PI);
+const double angle_2to1 = 180 - (atan(collector_height / (pos_reflector2 - pos_collector1))) * (180 / PI);
+const double angle_2to2 = (atan(collector_height / (pos_collector2 - pos_reflector2))) * (180 / PI);
+const double angle_3to1 = 180 - (atan(collector_height / (pos_reflector3 - pos_collector1))) * (180 / PI);
+const double angle_3to2 = (atan(collector_height / (pos_collector2 - pos_reflector3))) * (180 / PI);
+const double angle_4to1 = 180 - (atan(collector_height / (pos_reflector4 - pos_collector1))) * (180 / PI);
+const double angle_4to2 = (atan(collector_height / (pos_collector2 - pos_reflector4))) * (180 / PI);
+const double angle_5to1 = 180 - (atan(collector_height / (pos_reflector5 - pos_collector1))) * (180 / PI);
+const double angle_5to2 = (atan(collector_height / (pos_collector2 - pos_reflector5))) * (180 / PI);
+const double angle_6to1 = 180 - (atan(collector_height / (pos_reflector6 - pos_collector1))) * (180 / PI);
+const double angle_6to2 = (atan(collector_height / (pos_collector2 - pos_reflector6))) * (180 / PI);
+const double step_size = 1.8;  //Motor step size
+
+double transit, sunrise, sunset, latitude, longitude, current_time;
+double sun_angle;
+double collector_angle1, collector_angle2, collector_angle3, collector_angle4, collector_angle5, collector_angle6;
+double degrees_per_min;
+
+// Define motor connections
+#define dirPin1 12
+#define stepPin1 13
+#define dirPin2 10
+#define stepPin2 11
+#define dirPin3 8
+#define stepPin3 9
+#define dirPin4 6
+#define stepPin4 7
+#define dirPin5 4
+#define stepPin5 5
+#define dirPin6 2
+#define stepPin6 3
+
+#define motorInterfaceType 1
+
+// Create a instances of AccelStepper class
+AccelStepper stepper1 = AccelStepper(motorInterfaceType, stepPin1, dirPin1);
+AccelStepper stepper2 = AccelStepper(motorInterfaceType, stepPin2, dirPin2);
+AccelStepper stepper3 = AccelStepper(motorInterfaceType, stepPin3, dirPin3);
+AccelStepper stepper4 = AccelStepper(motorInterfaceType, stepPin4, dirPin4);
+AccelStepper stepper5 = AccelStepper(motorInterfaceType, stepPin5, dirPin5);
+AccelStepper stepper6 = AccelStepper(motorInterfaceType, stepPin6, dirPin6);
+
+uRTCLib rtc(0x68);
+
+void setup() {
+
+  Serial.begin(9600);
+  delay(3000);  // wait for console opening
+  URTCLIB_WIRE.begin();
+
+  //Setting RTC time during first use
+  // Comment out below line once you set the date & time.
+  //rtc.set(0,9,10,4,19,10,23);
+
+  //Format is: rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year)
+  //set day of week (1=Sunday, 7=Saturday)
+
+  //Extract Date Data From RTC
+  int year = rtc.year();
+  int month = rtc.month();
+  int day = rtc.day();
+
+  //Testing Location's Co-ordinates
+  double latitude = -33.9285647709253;
+  double longitude = 18.865534970950577;
+
+  //Set Home Position
+  stepper1.setCurrentPosition(0);
+  stepper2.setCurrentPosition(0);
+  stepper3.setCurrentPosition(0);
+  stepper4.setCurrentPosition(0);
+  stepper5.setCurrentPosition(0);
+  stepper6.setCurrentPosition(0);
+
+  //Determine Sunrise and Sunset Times for the Day
+  calcSunriseSunset(year, month, day, latitude, longitude, transit, sunrise, sunset);
+  sunrise = sunrise + 2;                              //Changing to current time zone
+  sunset = sunset + 2;                                //Changing to current time zone
+  degrees_per_min = 180 / ((sunset - sunrise) * 60);  //Number of degrees the sun moves per minute
+}
+
+void loop() {
+  delay(5000);  //Allow time to set reflectors after power up
+  rtc.refresh();
+
+  //Determine Current Time of Day
+  current_time = rtc.hour() + (rtc.minute() / 60) + (rtc.second() / 3600);
+  sun_angle = ((current_time - sunrise) * 60) * degrees_per_min;
+
+  if ((current_time < sunset) && (current_time > sunrise)) { //If sun is up then track
+  
+      if ((abs(sun_angle - angle_1to1)) <= (abs(sun_angle - angle_1to2))) {
+        collector_angle1 = angle_1to1;
+      } else {
+        collector_angle1 = angle_1to2;
+      }
+
+      if ((abs(sun_angle - angle_2to1)) <= (abs(sun_angle - angle_2to2))) {
+        collector_angle2 = angle_2to1;
+      } else {
+        collector_angle2 = angle_2to2;
+      }
+
+      if ((abs(sun_angle - angle_3to1)) <= (abs(sun_angle - angle_3to2))) {
+        collector_angle3 = angle_3to1;
+      } else {
+        collector_angle3 = angle_3to2;
+      }
+
+      if ((abs(sun_angle - angle_4to1)) <= (abs(sun_angle - angle_4to2))) {
+        collector_angle4 = angle_4to1;
+      } else {
+        collector_angle4 = angle_4to2;
+      }
+
+      if ((abs(sun_angle - angle_5to1)) <= (abs(sun_angle - angle_5to2))) {
+        collector_angle5 = angle_5to1;
+      } else {
+        collector_angle5 = angle_5to2;
+      }
+
+      if ((abs(sun_angle - angle_6to1)) <= (abs(sun_angle - angle_6to2))) {
+        collector_angle6 = angle_6to1;
+      } else {
+        collector_angle6 = angle_6to2;
+      }
+
+      double rotation1 = round((((sun_angle - collector_angle1) / 2) + collector_angle1) / step_size) - 50;
+      double rotation2 = round((((sun_angle - collector_angle2) / 2) + collector_angle2) / step_size) - 50;
+      double rotation3 = round((((sun_angle - collector_angle3) / 2) + collector_angle3) / step_size) - 50;
+      double rotation4 = round((((sun_angle - collector_angle4) / 2) + collector_angle4) / step_size) - 50;
+      double rotation5 = round((((sun_angle - collector_angle5) / 2) + collector_angle5) / step_size) - 50;
+      double rotation6 = round((((sun_angle - collector_angle6) / 2) + collector_angle6) / step_size) - 50;
+
+      stepper1.setMaxSpeed(0.2);
+      stepper1.setAcceleration(1000);
+      stepper1.moveTo(-rotation1);
+      stepper1.setSpeed(0.2);
+      stepper1.runToPosition();
+
+      stepper2.setMaxSpeed(0.2);
+      stepper2.setAcceleration(1000);
+      stepper2.moveTo(-rotation2);
+      stepper2.setSpeed(0.2);
+      stepper2.runToPosition();
+
+      stepper3.setMaxSpeed(0.2);
+      stepper3.setAcceleration(1000);
+      stepper3.moveTo(-rotation3);
+      stepper3.setSpeed(0.2);
+      stepper3.runToPosition();
+
+      stepper4.setMaxSpeed(0.2);
+      stepper4.setAcceleration(1000);
+      stepper4.moveTo(-rotation4);
+      stepper4.setSpeed(0.2);
+      stepper4.runToPosition();
+
+      stepper5.setMaxSpeed(0.2);
+      stepper5.setAcceleration(1000);
+      stepper5.moveTo(-rotation5);
+      stepper5.setSpeed(0.2);
+      stepper5.runToPosition();
+
+      stepper6.setMaxSpeed(0.2);
+      stepper6.setAcceleration(1000);
+      stepper6.moveTo(-rotation6);
+      stepper6.setSpeed(0.2);
+      stepper6.runToPosition();
+
+      delay(600000);  //10 Minute delay between panel adjustments
+    }
+  else { //If sun is not up then stow panels
+    stepper1.moveTo(0);
+    stepper1.runToPosition();
+    stepper2.moveTo(0);
+    stepper2.runToPosition();
+    stepper3.moveTo(0);
+    stepper3.runToPosition();
+    stepper4.moveTo(0);
+    stepper4.runToPosition();
+    stepper5.moveTo(0);
+    stepper5.runToPosition();
+    stepper6.moveTo(0);
+    stepper6.runToPosition();
+  }
+}
